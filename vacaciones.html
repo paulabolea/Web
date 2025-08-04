@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vacaciones</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    .hidden {
+      display: none;
+    }
+    .calendar-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    .calendar {
+      border: 1px solid #ccc;
+      padding: 10px;
+      cursor: pointer;
+      flex: 1 1 150px;
+      text-align: center;
+    }
+    .calendar-view {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      border: 1px solid #999;
+      padding: 20px;
+      z-index: 999;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      width: 90%;
+      max-width: 500px;
+    }
+    .calendar-view .controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .calendar-view .mode-selector {
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    .day-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 2px;
+    }
+    .day {
+      display: inline-block;
+      width: 28px;
+      height: 28px;
+      line-height: 28px;
+      text-align: center;
+      margin: 2px auto;
+      border: 1px solid #ddd;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .day.selected-vacaciones {
+      background-color: #2196f3;
+      color: white;
+    }
+    .day.selected-horas {
+      background-color: #4caf50;
+      color: white;
+    }
+    .day.selected-festivo {
+      background-color: #9c27b0;
+      color: white;
+    }
+    .day.selected-visitas {
+      background-color: orange;
+      color: white;
+    }
+    .weekday {
+      font-weight: bold;
+      text-align: center;
+    }
+    .overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 998;
+    }
+  </style>
+</head>
+<body>
+  <h1>Vacaciones</h1>
+  <div id="setup">
+    <label>Días de vacaciones: <input type="number" id="vacaciones" min="0" /></label><br />
+    <label>Horas de libre disposición: <input type="number" id="horas" min="0" /></label><br />
+    <button onclick="iniciar()">Continuar</button>
+  </div>
+
+  <div id="contador" class="hidden">
+    <p>Días restantes: <span id="diasRestantes">0</span></p>
+    <p>Horas restantes: <span id="horasRestantes">0</span></p>
+    <label><input type="radio" name="modo" value="vacaciones" checked /> Vacaciones</label>
+    <label><input type="radio" name="modo" value="horas" /> Horas</label>
+    <label><input type="radio" name="modo" value="festivo" /> Festivos</label>
+    <label><input type="radio" name="modo" value="visitas" /> Visitas y cosas</label>
+  </div>
+
+  <div id="selectorAnio" class="hidden">
+    <label for="anioSelect">Año:</label>
+    <select id="anioSelect" onchange="cambiarAnio()">
+      <option value="2025">2025</option>
+      <option value="2026">2026</option>
+    </select>
+  </div>
+
+  <div id="calendarios" class="calendar-container hidden"></div>
+  <div id="overlay" class="overlay hidden" onclick="cerrarCalendarioExpandido()"></div>
+  <div id="calendarioExpandido" class="calendar-view hidden"></div>
+
+  <script>
+    const meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+    const diasSemana = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+    let diasDisponibles = 0;
+    let horasDisponibles = 0;
+    let diasSeleccionados = new Map();
+    let anioActual = new Date().getFullYear();
+    let mesActual = new Date().getMonth();
+    let anioSeleccionado = 2025;
+
+    function iniciar() {
+      const anioInput = parseInt(document.getElementById('anioSelect')?.value || anioActual);
+      diasDisponibles = parseInt(document.getElementById('vacaciones').value) || 0;
+      horasDisponibles = parseInt(document.getElementById('horas').value) || 0;
+
+      if (anioInput === 2026) {
+        diasDisponibles += 22;
+        horasDisponibles = 58;
+      }
+
+      document.getElementById('diasRestantes').textContent = diasDisponibles;
+      document.getElementById('horasRestantes').textContent = horasDisponibles;
+      document.getElementById('setup').classList.add('hidden');
+      document.getElementById('contador').classList.remove('hidden');
+      document.getElementById('selectorAnio').classList.remove('hidden');
+      document.getElementById('calendarios').classList.remove('hidden');
+      guardarEnLocalStorage();
+      generarMiniCalendarios();
+    }
+
+    function cambiarAnio() {
+      const select = document.getElementById('anioSelect');
+      anioSeleccionado = parseInt(select.value);
+      generarMiniCalendarios();
+    }
+
+    function generarMiniCalendarios() {
+      const contenedor = document.getElementById('calendarios');
+      contenedor.innerHTML = "";
+      for (let mes = 0; mes < 12; mes++) {
+        const cal = document.createElement('div');
+        cal.className = 'calendar';
+        const nombre = document.createElement('div');
+        nombre.textContent = meses[mes];
+        cal.appendChild(nombre);
+
+        const diasMes = new Date(anioSeleccionado, mes + 1, 0).getDate();
+        const primerDia = new Date(anioSeleccionado, mes, 1).getDay();
+        const offset = primerDia === 0 ? 6 : primerDia - 1;
+        const grid = document.createElement('div');
+        grid.className = 'day-grid';
+        for (let i = 0; i < offset; i++) grid.appendChild(document.createElement('div'));
+        for (let d = 1; d <= diasMes; d++) {
+          const fecha = `${anioSeleccionado}-${mes + 1}-${d}`;
+          const dia = document.createElement('div');
+          dia.className = 'day';
+          dia.textContent = d;
+          if (diasSeleccionados.has(fecha)) {
+            const tipo = diasSeleccionados.get(fecha).tipo;
+            if (tipo === 'vacaciones') dia.classList.add('selected-vacaciones');
+            else if (tipo === 'horas') dia.classList.add('selected-horas');
+            else if (tipo === 'festivo') dia.classList.add('selected-festivo');
+            else if (tipo === 'visitas') dia.classList.add('selected-visitas');
+
+          }
+          grid.appendChild(dia);
+        }
+        cal.appendChild(grid);
+        cal.onclick = () => mostrarCalendarioExpandido(anioSeleccionado, mes);
+        contenedor.appendChild(cal);
+      }
+    }
+
+    function mostrarCalendarioExpandido(anio, mes) {
+      mesActual = mes;
+      anioActual = anio;
+      const contenedor = document.getElementById('calendarioExpandido');
+      const overlay = document.getElementById('overlay');
+      contenedor.innerHTML = "";
+
+      const controls = document.createElement('div');
+      controls.className = 'controls';
+      const btnAnt = document.createElement('button');
+      btnAnt.textContent = '<';
+      btnAnt.onclick = (e) => { e.stopPropagation(); cambiarMes(-1); };
+      const titulo = document.createElement('h3');
+      titulo.textContent = `${meses[mes]} ${anio}`;
+      const btnSig = document.createElement('button');
+      btnSig.textContent = '>';
+      btnSig.onclick = (e) => { e.stopPropagation(); cambiarMes(1); };
+      controls.appendChild(btnAnt);
+      controls.appendChild(titulo);
+      controls.appendChild(btnSig);
+
+      const modo = document.createElement('div');
+      modo.className = 'mode-selector';
+      modo.innerHTML = `
+        <label><input type="radio" name="modoExpandido" value="vacaciones" checked> Vacaciones</label>
+        <label><input type="radio" name="modoExpandido" value="horas"> Horas</label>
+        <label><input type="radio" name="modoExpandido" value="festivo"> Festivo</label>
+        <label><input type="radio" name="modoExpandido" value="visitas"> Visitas</label>
+
+      `;
+
+      const grid = document.createElement('div');
+      grid.className = 'day-grid';
+      diasSemana.forEach(dia => {
+        const encabezado = document.createElement('div');
+        encabezado.className = 'weekday';
+        encabezado.textContent = dia;
+        grid.appendChild(encabezado);
+      });
+
+      const diasMes = new Date(anio, mes + 1, 0).getDate();
+      const primerDia = new Date(anio, mes, 1).getDay();
+      const offset = primerDia === 0 ? 6 : primerDia - 1;
+      for (let i = 0; i < offset; i++) grid.appendChild(document.createElement('div'));
+
+      for (let d = 1; d <= diasMes; d++) {
+        const dia = document.createElement('div');
+        dia.className = 'day';
+        dia.textContent = d;
+        const fecha = `${anio}-${mes + 1}-${d}`;
+        dia.dataset.fecha = fecha;
+        if (diasSeleccionados.has(fecha)) {
+          const tipo = diasSeleccionados.get(fecha).tipo;
+          if (tipo === 'vacaciones') dia.classList.add('selected-vacaciones');
+          else if (tipo === 'horas') dia.classList.add('selected-horas');
+          else if (tipo === 'festivo') dia.classList.add('selected-festivo');
+          else if (tipo === 'visitas') dia.classList.add('selected-visitas');
+        }
+        dia.onclick = (e) => {
+          e.stopPropagation();
+          const modo = document.querySelector('input[name="modoExpandido"]:checked').value;
+          seleccionarDia(dia, modo);
+        };
+        grid.appendChild(dia);
+      }
+
+      contenedor.appendChild(controls);
+      contenedor.appendChild(modo);
+      contenedor.appendChild(grid);
+      contenedor.classList.remove('hidden');
+      overlay.classList.remove('hidden');
+    }
+
+    function cerrarCalendarioExpandido() {
+      document.getElementById('calendarioExpandido').classList.add('hidden');
+      document.getElementById('overlay').classList.add('hidden');
+      generarMiniCalendarios();
+    }
+
+    function cambiarMes(delta) {
+      mesActual += delta;
+      if (mesActual > 11) { mesActual = 0; anioActual++; }
+      else if (mesActual < 0) { mesActual = 11; anioActual--; }
+      mostrarCalendarioExpandido(anioActual, mesActual);
+    }
+
+    function seleccionarDia(dia, modoManual = null) {
+      const fecha = dia.dataset.fecha;
+      const modo = modoManual || document.querySelector('input[name="modo"]:checked').value;
+      if (diasSeleccionados.has(fecha)) {
+        const tipo = diasSeleccionados.get(fecha).tipo;
+        if (tipo === 'vacaciones') diasDisponibles++;
+        else if (tipo === 'horas') horasDisponibles += diasSeleccionados.get(fecha).cantidad;
+        dia.classList.remove('selected-vacaciones', 'selected-horas', 'selected-festivo', 'selected-visitas');
+        diasSeleccionados.delete(fecha);
+        actualizarContadores();
+        guardarEnLocalStorage();
+        return;
+      }
+
+      if (modo === 'vacaciones') {
+        if (diasDisponibles <= 0) return alert("No te quedan días disponibles");
+        diasDisponibles--;
+        diasSeleccionados.set(fecha, { tipo: 'vacaciones', cantidad: 1 });
+        dia.classList.add('selected-vacaciones');
+      } else if (modo === 'festivo') {
+        diasSeleccionados.set(fecha, { tipo: 'festivo', cantidad: 0 });
+        dia.classList.add('selected-festivo');
+      } else if (modo === 'visitas') {
+        diasSeleccionados.set(fecha, { tipo: 'visitas', cantidad: 0 });
+        dia.classList.add('selected-visitas');
+      } else {
+        if (horasDisponibles <= 0) return alert("No te quedan horas disponibles");
+        let horas = parseInt(prompt("¿Cuántas horas quieres usar este día?"));
+        if (!horas || horas <= 0 || horas > horasDisponibles) return alert("Horas no válidas");
+        horasDisponibles -= horas;
+        diasSeleccionados.set(fecha, { tipo: 'horas', cantidad: horas });
+        dia.classList.add('selected-horas');
+      }
+
+
+      actualizarContadores();
+      guardarEnLocalStorage();
+    }
+
+    function actualizarContadores() {
+      document.getElementById('diasRestantes').textContent = diasDisponibles;
+      document.getElementById('horasRestantes').textContent = horasDisponibles;
+    }
+
+    function guardarEnLocalStorage() {
+      const datos = {
+        diasDisponibles,
+        horasDisponibles,
+        diasSeleccionados: Array.from(diasSeleccionados.entries())
+      };
+      localStorage.setItem('Vacaciones', JSON.stringify(datos));
+    }
+
+    function cargarDeLocalStorage() {
+      const datos = JSON.parse(localStorage.getItem('Vacaciones'));
+      if (!datos) return;
+      diasDisponibles = datos.diasDisponibles;
+      horasDisponibles = datos.horasDisponibles;
+      diasSeleccionados = new Map(datos.diasSeleccionados);
+      document.getElementById('diasRestantes').textContent = diasDisponibles;
+      document.getElementById('horasRestantes').textContent = horasDisponibles;
+      document.getElementById('setup').classList.add('hidden');
+      document.getElementById('contador').classList.remove('hidden');
+      document.getElementById('selectorAnio').classList.remove('hidden');
+      document.getElementById('calendarios').classList.remove('hidden');
+      generarMiniCalendarios();
+    }
+
+    window.onload = cargarDeLocalStorage;
+  </script>
+</body>
+</html>
